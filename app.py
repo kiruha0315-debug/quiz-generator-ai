@@ -2,185 +2,289 @@ import streamlit as st
 import google.generativeai as genai
 import os
 import re
-import json # JSONデータを扱うために必要
+import json
+from PIL import Image
+from io import BytesIO
 
-# ページ設定
-st.set_page_config(page_title="教材理解度テスト自動生成AI", page_icon="📝")
+# --- 1. 初期設定とAPIキーの取得 ---
 
-# タイトル
-st.title("📝 教材理解度テスト自動生成AI")
-st.write("教科書や資料のテキストを貼り付けると、その内容から5択問題を自動で作成します。")
+st.set_page_config(page_title="教材理解度テスト自動生成AI", layout="wide")
 
-# セッション状態の初期化
+st.title("📚 教材理解度テスト自動生成AI")
+st.markdown("貼り付けたテキストやアップロードした写真から、**教科の特性**に合わせた問題セットを自動で生成します。")
+
+# Streamlit Secretsまたは環境変数からAPIキーを取得
+API_KEY = os.environ.get("GEMINI_API_KEY")
+
+if not API_KEY:
+    # サイドバーでAPIキー入力を求める（ローカルテスト用）
+    st.sidebar.title("設定")
+    API_KEY = st.sidebar.text_input("Gemini API Key", type="password")
+    if not API_KEY:
+        st.error("左のサイドバーにGemini APIキーを入力してください。")
+        st.stop()
+
+try:
+    genai.configure(api_key=API_KEY)
+    api_key_valid = True
+except Exception:
+    api_key_valid = False
+    st.error("APIキーが無効です。正しいキーを入力してください。")
+    st.stop()
+
+# --- 2. ユーザー入力エリア ---
+
+# --- ステップ1: 教材の入力方式と教科の選択 ---
+st.subheader("ステップ1: 教材の入力方式と教科の選択")
+
+# 入力方式の選択
+input_method = st.radio(
+    "教材の入力方式を選択してください",
+    ('テキスト貼り付け', 'ファイルアップロード (PDF/TXT)', '写真アップロード (JPG/PNG)')
+)
+
+# 問題数
+num_questions = st.number_input("生成する問題数", min_value=1, max_value=20, value=5)
+
+# 教科の選択
+selected_subject = st.selectbox(
+    "科目を選択してください",
+    ('ランダム/一般教養', '歴史・地理', '科学・技術 (理科)', '文学・言語 (国語/英語)', '経済・社会')
+)
+
+# 選択された方式に応じた入力フォームの表示
+text_input = ""
+uploaded_file = None
+image_part = None
+
+if input_method == 'テキスト貼り付け':
+    text_input = st.text_area(
+        "ここに教科書や資料の本文を貼り付けてください（100字以上推奨）",
+        height=300
+    )
+    if not text_input:
+        st.info("テキストを貼り付けてください。")
+
+elif input_method == 'ファイルアップロード (PDF/TXT)':
+    uploaded_file = st.file_uploader("TXTファイルをアップロードしてください", type=['txt'])
+    if uploaded_file:
+        if uploaded_file.type == 'text/plain':
+            text_input = uploaded_file.read().decode('utf-8')
+            st.success(f"{uploaded_file.name} を読み込みました。")
+        else:
+            st.warning("現在はTXTファイルのみ対応しています。PDFからの直接テキスト抽出は未実装です。")
+    if not text_input:
+        st.info("TXTファイルをアップロードしてください。")
+
+elif input_method == '写真アップロード (JPG/PNG)':
+    uploaded_file = st.file_uploader("教科書の写真をアップロードしてください", type=['jpg', 'jpeg', 'png'])
+    if uploaded_file:
+        try:
+            image = Image.open(uploaded_file)
+            st.image(image, caption='アップロードされた教材画像', width=300)
+            image_part = image
+            st.info("画像をAIに渡し、内容を読み取らせます。")
+        except Exception as e:
+            st.error(f"画像の読み込みに失敗しました: {e}")
+
+if not text_input and not image_part:
+    st.session_state.quiz_data = None
+    st.session_state.user_answers = {}
+
+
+# --- 3. 問題生成ロジック ---
+
+# 状態管理（セッションステート）
 if 'quiz_data' not in st.session_state:
     st.session_state.quiz_data = None
 if 'user_answers' not in st.session_state:
     st.session_state.user_answers = {}
 
-# --- サイドバーでAPIキー設定 ---
-with st.sidebar:
-    st.header("設定")
+if st.button("問題を生成する"):
+    if not api_key_valid:
+        st.error("APIキーを正しく設定してください。")
+        st.stop()
+
+    if not text_input and not image_part:
+        st.error("教材（テキストまたは画像）を入力してください。")
+        st.stop()
     
-    # 外部公開時にシークレットからキーを読み込む処理
-    if "GEMINI_API_KEY" in st.secrets:
-        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-        api_key_valid = True
-    else:
-        # ローカル実行時やシークレット未設定時に手動入力を促す
-        api_key = st.text_input("Gemini APIキー", type="password")
-        if api_key:
-            genai.configure(api_key=api_key)
-            api_key_valid = True
-        else:
-            st.warning("APIキーを入力してください。")
-            api_key_valid = False
-
-    num_questions = st.slider("作成する問題数", 1, 10, 5)
-
-# --- メインエリア：教材テキスト入力 ---
-st.subheader("ステップ1: 教材テキストの貼り付け")
-text_input = st.text_area(
-    "ここに教科書や資料の本文を貼り付けてください（100字以上推奨）",
-    height=300
-)
-
-# --- ステップ2: 問題生成ボタン ---
-# APIキーとテキストが揃っているか確認
-if st.button("問題を生成する") and api_key_valid and text_input:
-    if len(text_input) < 100:
+    # テキスト入力モードで100字未満の場合は警告
+    if input_method == 'テキスト貼り付け' and len(text_input) < 100:
         st.error("テキストが短すぎます。100字以上の文章を貼り付けてください。")
-    else:
-        # AIへの命令（プロンプト）を厳密に定義
-        system_prompt = f"""
-        あなたはプロの教育コンテンツ作成AIです。
-        以下の「入力テキスト」を分析し、その内容だけに基づいた{num_questions}問の5択問題を生成してください。
+        st.stop()
 
-        【重要ルール】
-        1. 問題、正解、不正解の選択肢、そして解説を必ず含むこと。
-        2. 正解は必ず一つにすること。
-        3. 不正解の選択肢も、知識がないと間違えやすい、関連性の高い内容にすること。
-        4. 出力は、以下のJSON形式に**厳密に従って**ください。余計な説明や前置きの文章は一切含めないでください。
+    # --- 教科ごとの問題形式ルールを定義 ---
+    if selected_subject == '歴史・地理':
+        problem_style_instruction = "問題タイプは、「fill_in_the_blank」（穴埋め）を50%、「descriptive」（記述式）を30%、「meaning」（語句の意味）を20%の比率で混合してください。歴史的な事実や年代、地名に焦点を当ててください。"
+    elif selected_subject == '科学・技術 (理科)':
+        problem_style_instruction = "問題タイプは、「multiple_choice」（5択）を70%、「descriptive」（記述式）を30%の比率で混合してください。物理法則や化学反応、定義の理解度を問う問題に焦点を当ててください。選択肢は誤解しやすいものが望ましいです。"
+    elif selected_subject == '文学・言語 (国語/英語)':
+        problem_style_instruction = "問題タイプは、「meaning」（語句の意味）を50%、「descriptive」（記述式：和訳、表現の意図など）を50%の比率で混合してください。文法や表現技法、単語の意味に焦点を当ててください。"
+    elif selected_subject == '経済・社会':
+        problem_style_instruction = "問題タイプは、「descriptive」（記述式：定義、影響、仕組み）を60%、「multiple_choice」（5択：統計や法律）を40%の比率で混合してください。社会の仕組みや経済原則の理解度を問う問題に焦点を当ててください。"
+    else: # ランダム/一般教養の場合
+        problem_style_instruction = "問題タイプは、「multiple_choice」（5択）、「descriptive」（記述式）、「fill_in_the_blank」（穴埋め）、「meaning」（語句の意味）を均等に混ぜて生成してください。"
+    
+    # --- AIへの命令（プロンプト）を厳密に定義 ---
+    system_prompt = f"""
+    あなたはプロの教育コンテンツ作成AIです。
+    以下の教材の内容を分析し、**{selected_subject}** の教科として最適な問題セットを{num_questions}問生成してください。
 
+    **【問題形式指示】**
+    {problem_style_instruction}
+
+    【重要ルール】
+    1. 各問題には、必ず type (multiple_choice, descriptive, fill_in_the_blank, meaning のいずれか)、question、そして explanation（解説）を含むこと。
+    2. 'multiple_choice' の場合は、options配列（正答1つ、不正解3つ、計4つ）を必ず含むこと。'correct_answer'フィールドは不要です。
+    3. 'descriptive', 'fill_in_the_blank', 'meaning' の場合は、'correct_answer' フィールドを必ず含み、'options'配列は不要です。
+    4. 出力は、以下のJSON形式に**厳密に従って**ください。余計な説明や前置きは一切含めないでください。
+
+    {{
+      "questions": [
         {{
-          "questions": [
-            {{
-              "id": 1,
-              "question": "質問文",
-              "options": [
-                {{"text": "選択肢A", "is_correct": false}},
-                {{"text": "選択肢B", "is_correct": true}},
-                {{"text": "選択肢C", "is_correct": false}},
-                {{"text": "選択肢D", "is_correct": false}}
-              ],
-              "explanation": "正解の解説文"
-            }}
-            //... {num_questions}問
-          ]
-        }}
-        """
+          "id": 1,
+          "type": "multiple_choice", // または descriptive, fill_in_the_blank, meaning
+          "question": "質問文",
+          "options": [
+            {{"text": "選択肢A", "is_correct": false}},
+            //... 4つの選択肢 (multiple_choice の場合のみ)
+          ],
+          "explanation": "解説文"
+        }},
+        //... {num_questions}問
+      ]
+    }}
+    """
+    
+    # --- AIに渡すコンテンツリストの作成 ---
+    content_list = [system_prompt]
+    
+    if image_part:
+        # 写真がアップロードされた場合
+        content_list.append(image_part)
+        content_list.append("上記の画像の内容を読み取り、以下の指示に従って問題を生成してください。")
+    elif text_input:
+        # テキストが入力された場合
+        content_list.append(f"【入力テキスト】\n\n{text_input}")
+    
+    
+    try:
+        model = genai.GenerativeModel("gemini-2.5-flash")
         
-        user_prompt = f"【入力テキスト】\n\n{text_input}"
+        with st.spinner(f"📝 {selected_subject}のルールに基づいて{num_questions}問を生成中..."):
+            # マルチモーダル対応の model.generate_content 呼び出し
+            response = model.generate_content(
+                content_list, # content_list に画像やテキストがすべて含まれる
+                generation_config={"response_mime_type": "application/json"} 
+            )
 
-        try:
-            # 安定性と互換性の高い最新モデルを使用
-            model = genai.GenerativeModel("gemini-2.5-flash")
+            quiz_data = response.text
             
-            with st.spinner(f"📝 {num_questions}問の問題と解答を生成中..."):
-                # 修正済み: config -> generation_config に変更し、JSON出力をリクエスト
-                response = model.generate_content(
-                    [system_prompt, user_prompt],
-                    generation_config={"response_mime_type": "application/json"} 
-                )
+            # JSONパース（AIが生成したテキストからJSON部分を抽出）
+            match = re.search(r'\{.*\}', quiz_data, re.DOTALL)
+            if match:
+                json_string = match.group(0)
+                st.session_state.quiz_data = json.loads(json_string)
+                st.session_state.user_answers = {} 
+            else:
+                st.error("AIからのレスポンスがJSON形式ではありませんでした。AIの応答を確認してください。")
+                st.text(quiz_data) # エラー時にAIの生の応答を表示
+                st.session_state.quiz_data = None
+            
+    except Exception as e:
+        st.error(f"問題生成中にエラーが発生しました: {e}")
+        st.session_state.quiz_data = None
 
-                quiz_data = response.text
-                
-                # AIが出力したJSON文字列の前後にある不要な文字を削除し、JSONとして読み込む
-                match = re.search(r'\{.*\}', quiz_data, re.DOTALL)
-                if match:
-                    json_string = match.group(0)
-                    st.session_state.quiz_data = json.loads(json_string)
-                    # ユーザーの解答履歴をリセット
-                    st.session_state.user_answers = {} 
-                else:
-                    st.error("AIからのレスポンスがJSON形式ではありませんでした。テキストの内容を変えて再試行してください。")
-                    st.session_state.quiz_data = None
-                
-        except Exception as e:
-            st.error(f"問題生成中にエラーが発生しました: {e}")
-            st.session_state.quiz_data = None
 
-# --- ステップ3: 結果の表示 ---
-st.subheader("ステップ2: 生成された問題")
+# --- 4. 結果表示エリア ---
 
 if st.session_state.quiz_data:
     questions = st.session_state.quiz_data.get("questions", [])
+    st.header(f"生成された問題 ({len(questions)}問)")
     
     # 問題を一つずつ表示
     for i, q in enumerate(questions):
-        st.markdown(f"**第{i+1}問: {q['question']}**")
+        q_type = q.get("type", "unknown") 
         
-        # ラジオボタンのキーにはユニークなIDを使用
-        user_choice = st.radio(
-            "選択してください:",
-            options=[opt["text"] for opt in q["options"]],
-            key=f"q{i}",
-            index=None # 初期値はなし
-        )
+        # 問題タイプに応じたタイトル表示
+        q_title_map = {
+            "multiple_choice": "5択問題",
+            "descriptive": "記述式問題",
+            "fill_in_the_blank": "穴埋め問題",
+            "meaning": "語句の意味問題"
+        }
+        display_title = q_title_map.get(q_type, "その他の問題")
         
-        # ユーザーの解答を保存
-        st.session_state.user_answers[f"q{i}"] = user_choice
+        st.markdown(f"### 第{i+1}問: 【{display_title}】")
+        st.markdown(f"**{q.get('question', '問題文が見つかりません')}**")
 
-        # 解答が選択されているかチェックし、結果を表示
-        if user_choice:
-            is_correct = False
-            correct_option = ""
+        # --- 問題タイプごとの入力/表示制御 ---
+        if q_type == "multiple_choice":
+            # 5択問題の場合
+            options = [opt.get("text") for opt in q.get("options", []) if opt.get("text")]
+            user_choice = st.radio(
+                "選択してください:",
+                options=options,
+                key=f"q{i}",
+                index=None
+            )
+            st.session_state.user_answers[f"q{i}"] = user_choice
+
+            # 自動採点ロジック
+            if user_choice:
+                correct_option = next((opt["text"] for opt in q.get("options", []) if opt.get("is_correct")), None)
+                
+                if correct_option and user_choice == correct_option:
+                    st.success("✅ 正解です！")
+                elif correct_option:
+                    st.error(f"❌ 不正解です。")
+                else:
+                    st.warning("正答がJSONに見つかりませんでした。")
             
-            for opt in q["options"]:
-                if opt["is_correct"]:
-                    correct_option = opt["text"]
-                if opt["text"] == user_choice and opt["is_correct"]:
-                    is_correct = True
-                    break
+        else:
+            # 記述式、穴埋め、意味問題の場合
+            user_input = st.text_input(
+                "あなたの解答を入力してください",
+                key=f"q{i}_input"
+            )
+            st.session_state.user_answers[f"q{i}"] = user_input
             
-            # 結果表示
-            if is_correct:
-                st.success("✅ 正解です！")
-            else:
-                st.error(f"❌ 不正解です。正解は「{correct_option}」でした。")
+            # 自己採点エリア
+            if st.session_state.user_answers.get(f"q{i}"):
+                st.info("⚠️ この形式は自己採点です。正答を確認してください。")
             
-            # 解説表示
-            with st.expander("👉 解説を見る"):
-                st.write(q["explanation"])
-        
+        # --- 解説表示 (共通) ---
+        with st.expander("👉 正答と解説を見る"):
+            if q_type != "multiple_choice":
+                st.markdown(f"**【期待される正答】** {q.get('correct_answer', '正答データなし')}")
+            st.write(q.get('explanation', '解説データなし'))
+            
         st.markdown("---")
         
-    # 全問題の採点結果表示
-    if st.button("最終結果を見る"):
+    # --- 最終スコア表示（5択問題のみカウント） ---
+    if st.button("最終スコアを見る", key="final_score_btn"):
         correct_count = 0
-        total_questions = len(questions)
+        total_mcq = 0
         
         for i, q in enumerate(questions):
-            user_choice = st.session_state.user_answers.get(f"q{i}")
-            if user_choice:
-                for opt in q["options"]:
-                    if opt["text"] == user_choice and opt["is_correct"]:
+            if q.get("type") == "multiple_choice":
+                total_mcq += 1
+                user_choice = st.session_state.user_answers.get(f"q{i}")
+                
+                if user_choice:
+                    correct_option = next((opt.get("text") for opt in q.get("options", []) if opt.get("is_correct")), None)
+                    if correct_option and user_choice == correct_option:
                         correct_count += 1
-                        break
 
-        if total_questions > 0:
+        if total_mcq > 0:
             st.balloons()
-            st.subheader("✨ 最終スコア ✨")
+            st.subheader("✨ 最終スコア（5択問題のみ自動採点） ✨")
             st.metric(
-                label="正解率", 
-                value=f"{correct_count}/{total_questions}問", 
-                delta=f"{(correct_count/total_questions)*100:.1f}%"
+                label="5択問題 正解数", 
+                value=f"{correct_count}/{total_mcq}問"
             )
-
-st.sidebar.markdown("---")
-st.sidebar.markdown(
-    """
-    **開発者メモ:**
-    このアプリは、Geminiの**JSON出力機能**を使って、AIに問題という**構造化データ**を作らせています。
-    これにより、Python側で解答チェックや表示処理が正確に行えます。
-    """
-)
+            st.success(f"正解率: {(correct_count/total_mcq)*100:.1f}%")
+            st.info("記述式・穴埋め・意味問題は自動採点に含まれていません。")
+        else:
+            st.info("5択問題が生成されなかったため、自動採点スコアはありません。")
