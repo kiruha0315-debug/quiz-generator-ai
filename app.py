@@ -5,16 +5,42 @@ import re
 import json
 from PIL import Image
 from io import BytesIO
+import streamlit.components.v1 as components # 👈 新規インポート
 
 # --- 1. 初期設定とAPIキーの取得 ---
 
 st.set_page_config(page_title="教材理解度テスト自動生成AI", layout="wide")
 
 st.title("📚 教材理解度テスト自動生成AI")
+
+# --- 広告エリア：タイトル直下に配置 ---
+
+# 広告コードをトリプルクォートで変数に格納
+# 1つ目の広告 (幅320x高50)
+ad_html_code_1 = """
+<div style="text-align: center; margin: 5px 0 10px 0;">
+    <a href="https://px.a8.net/svt/ejp?a8mat=45K5P9+9SGMWI+4GDM+601S1" rel="nofollow">
+    <img border="0" width="320" height="50" alt="" src="https://www28.a8.net/svt/bgt?aid=251203293592&wid=001&eno=01&mid=s00000020785001008000&mc=1"></a>
+    <img border="0" width="1" height="1" src="https://www19.a8.net/0.gif?a8mat=45K5P9+9SGMWI+4GDM+601S1" alt="">
+</div>
+"""
+
+# 2つ目の広告 (幅350x高240)
+ad_html_code_2 = """
+<div style="text-align: center; margin: 10px 0;">
+    <a href="https://px.a8.net/svt/ejp?a8mat=45K5P9+A4YQLU+2KSK+61C2P" rel="nofollow">
+    <img border="0" width="350" height="240" alt="" src="https://www20.a8.net/svt/bgt?aid=251203293613&wid=001&eno=01&mid=s00000012026001014000&mc=1"></a>
+    <img border="0" width="1" height="1" src="https://www18.a8.net/0.gif?a8mat=45K5P9+A4YQLU+2KSK+61C2P" alt="">
+</div>
+"""
+# components.htmlを使って広告を表示
+components.html(ad_html_code_1 + ad_html_code_2, height=320) # 広告の高さに合わせて調整
+
+st.markdown("---") # 広告とアプリ本体の区切り
+
 st.markdown("貼り付けたテキストやアップロードした写真から、**教科の特性**に合わせた問題セットを自動で生成します。")
 
 # Streamlit Secretsまたは環境変数からAPIキーを取得
-# 注: 公開時はGEMINI_API_KEYをStreamlit CloudのSecretsに設定してください。
 API_KEY = os.environ.get("GEMINI_API_KEY")
 
 if not API_KEY:
@@ -35,25 +61,20 @@ except Exception:
 
 # --- 2. ユーザー入力エリア ---
 
-# --- ステップ1: 教材の入力方式と教科の選択 ---
 st.subheader("ステップ1: 教材の入力方式と教科の選択")
 
-# 入力方式の選択
 input_method = st.radio(
     "教材の入力方式を選択してください",
     ('テキスト貼り付け', 'ファイルアップロード (PDF/TXT)', '写真アップロード (JPG/PNG)')
 )
 
-# 問題数
 num_questions = st.number_input("生成する問題数", min_value=1, max_value=20, value=5)
 
-# 教科の選択
 selected_subject = st.selectbox(
     "科目を選択してください",
     ('ランダム/一般教養', '歴史・地理', '科学・技術 (理科)', '文学・言語 (国語/英語)', '経済・社会')
 )
 
-# 選択された方式に応じた入力フォームの表示
 text_input = ""
 uploaded_file = None
 image_part = None
@@ -95,7 +116,6 @@ if not text_input and not image_part:
 
 # --- 3. 問題生成ロジック ---
 
-# 状態管理（セッションステート）
 if 'quiz_data' not in st.session_state:
     st.session_state.quiz_data = None
 if 'user_answers' not in st.session_state:
@@ -123,7 +143,7 @@ if st.button("問題を生成する"):
         problem_style_instruction = "問題タイプは、「meaning」（語句の意味）を50%、「descriptive」（記述式：和訳、表現の意図など）を50%の比率で混合してください。文法や表現技法、単語の意味に焦点を当ててください。"
     elif selected_subject == '経済・社会':
         problem_style_instruction = "問題タイプは、「descriptive」（記述式：定義、影響、仕組み）を60%、「multiple_choice」（5択：統計や法律）を40%の比率で混合してください。社会の仕組みや経済原則の理解度を問う問題に焦点を当ててください。"
-    else: # ランダム/一般教養の場合
+    else:
         problem_style_instruction = "問題タイプは、「multiple_choice」（5択）、「descriptive」（記述式）、「fill_in_the_blank」（穴埋め）、「meaning」（語句の意味）を均等に混ぜて生成してください。"
     
     # --- AIへの命令（プロンプト）を厳密に定義 ---
@@ -136,7 +156,7 @@ if st.button("問題を生成する"):
 
     【重要ルール】
     1. 各問題には、必ず type (multiple_choice, descriptive, fill_in_the_blank, meaning のいずれか)、question、そして explanation（解説）を含むこと。
-    2. 'multiple_choice' の場合は、options配列（正答1つ、不正解3つ、計4つ）を必ず含むこと。'correct_answer'フィールドは不要です。
+    2. 'multiple_choice' の場合は、options配列（正答1つ、不正解3つ、計4つ）を必ず含むこと。
     3. 'descriptive', 'fill_in_the_blank', 'meaning' の場合は、'correct_answer' フィールドを必ず含み、'options'配列は不要です。
     4. 出力は、以下のJSON形式に**厳密に従って**ください。余計な説明や前置きは一切含めないでください。
 
@@ -148,7 +168,6 @@ if st.button("問題を生成する"):
           "question": "質問文",
           "options": [
             {{"text": "選択肢A", "is_correct": false}},
-            //... 4つの選択肢 (multiple_choice の場合のみ)
           ],
           "explanation": "解説文"
         }},
@@ -157,15 +176,12 @@ if st.button("問題を生成する"):
     }}
     """
     
-    # --- AIに渡すコンテンツリストの作成 ---
     content_list = [system_prompt]
     
     if image_part:
-        # 写真がアップロードされた場合
         content_list.append(image_part)
         content_list.append("上記の画像の内容を読み取り、以下の指示に従って問題を生成してください。")
     elif text_input:
-        # テキストが入力された場合
         content_list.append(f"【入力テキスト】\n\n{text_input}")
     
     
@@ -186,7 +202,7 @@ if st.button("問題を生成する"):
                 st.session_state.quiz_data = json.loads(json_string)
                 st.session_state.user_answers = {} 
             else:
-                st.error("AIからのレスポンスがJSON形式ではありませんでした。AIの応答を確認してください。")
+                st.error("AIからのレスポンスがJSON形式ではありませんでした。")
                 st.text(quiz_data)
                 st.session_state.quiz_data = None
             
@@ -201,7 +217,6 @@ if st.session_state.quiz_data:
     questions = st.session_state.quiz_data.get("questions", [])
     st.header(f"生成された問題 ({len(questions)}問)")
     
-    # 問題を一つずつ表示
     for i, q in enumerate(questions):
         q_type = q.get("type", "unknown") 
         
@@ -216,7 +231,6 @@ if st.session_state.quiz_data:
         st.markdown(f"### 第{i+1}問: 【{display_title}】")
         st.markdown(f"**{q.get('question', '問題文が見つかりません')}**")
 
-        # --- 問題タイプごとの入力/表示制御 ---
         if q_type == "multiple_choice":
             options = [opt.get("text") for opt in q.get("options", []) if opt.get("text")]
             user_choice = st.radio(
@@ -228,7 +242,7 @@ if st.session_state.quiz_data:
             st.session_state.user_answers[f"q{i}"] = user_choice
 
             if user_choice:
-                correct_option = next((opt["text"] for opt in q.get("options", []) if opt.get("is_correct")), None)
+                correct_option = next((opt.get("text") for opt in q.get("options", []) if opt.get("is_correct")), None)
                 
                 if correct_option and user_choice == correct_option:
                     st.success("✅ 正解です！")
@@ -245,42 +259,14 @@ if st.session_state.quiz_data:
             if st.session_state.user_answers.get(f"q{i}"):
                 st.info("⚠️ この形式は自己採点です。正答を確認してください。")
             
-        # --- 解説表示 (共通) ---
         with st.expander("👉 正答と解説を見る"):
             if q_type != "multiple_choice":
                 st.markdown(f"**【期待される正答】** {q.get('correct_answer', '正答データなし')}")
             st.write(q.get('explanation', '解説データなし'))
             
         st.markdown("---")
-        
-    # --- 広告エリア ---
-    st.header("💡 おすすめ学習リソース")
-    
-    # 広告コードをトリプルクォートで変数に格納
-    ad_html_code_1 = """
-    <div style="text-align: center; margin: 20px 0;">
-        <a href="https://px.a8.net/svt/ejp?a8mat=45K5P9+9SGMWI+4GDM+601S1" rel="nofollow">
-        <img border="0" width="320" height="50" alt="" src="https://www28.a8.net/svt/bgt?aid=251203293592&wid=001&eno=01&mid=s00000020785001008000&mc=1"></a>
-        <img border="0" width="1" height="1" src="https://www19.a8.net/0.gif?a8mat=45K5P9+9SGMWI+4GDM+601S1" alt="">
-    </div>
-    """
-    
-    ad_html_code_2 = """
-    <div style="text-align: center; margin: 20px 0;">
-        <a href="https://px.a8.net/svt/ejp?a8mat=45K5P9+A4YQLU+2KSK+61C2P" rel="nofollow">
-        <img border="0" width="350" height="240" alt="" src="https://www20.a8.net/svt/bgt?aid=251203293613&wid=001&eno=01&mid=s00000012026001014000&mc=1"></a>
-        <img border="0" width="1" height="1" src="https://www18.a8.net/0.gif?a8mat=45K5P9+A4YQLU+2KSK+61C2P" alt="">
-    </div>
-    """
-    
-    # 2つの広告を表示
-    st.markdown(ad_html_code_1, unsafe_allow_html=True)
-    st.markdown(ad_html_code_2, unsafe_allow_html=True)
-    
-    st.markdown("---")
 
 
-    # --- 最終スコア表示（5択問題のみカウント） ---
     if st.button("最終スコアを見る", key="final_score_btn"):
         correct_count = 0
         total_mcq = 0
