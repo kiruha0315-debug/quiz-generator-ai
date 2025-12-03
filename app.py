@@ -14,6 +14,7 @@ st.title("📚 教材理解度テスト自動生成AI")
 st.markdown("貼り付けたテキストやアップロードした写真から、**教科の特性**に合わせた問題セットを自動で生成します。")
 
 # Streamlit Secretsまたは環境変数からAPIキーを取得
+# 注: 公開時はGEMINI_API_KEYをStreamlit CloudのSecretsに設定してください。
 API_KEY = os.environ.get("GEMINI_API_KEY")
 
 if not API_KEY:
@@ -109,7 +110,6 @@ if st.button("問題を生成する"):
         st.error("教材（テキストまたは画像）を入力してください。")
         st.stop()
     
-    # テキスト入力モードで100字未満の場合は警告
     if input_method == 'テキスト貼り付け' and len(text_input) < 100:
         st.error("テキストが短すぎます。100字以上の文章を貼り付けてください。")
         st.stop()
@@ -144,7 +144,7 @@ if st.button("問題を生成する"):
       "questions": [
         {{
           "id": 1,
-          "type": "multiple_choice", // または descriptive, fill_in_the_blank, meaning
+          "type": "multiple_choice",
           "question": "質問文",
           "options": [
             {{"text": "選択肢A", "is_correct": false}},
@@ -173,15 +173,13 @@ if st.button("問題を生成する"):
         model = genai.GenerativeModel("gemini-2.5-flash")
         
         with st.spinner(f"📝 {selected_subject}のルールに基づいて{num_questions}問を生成中..."):
-            # マルチモーダル対応の model.generate_content 呼び出し
             response = model.generate_content(
-                content_list, # content_list に画像やテキストがすべて含まれる
+                content_list, 
                 generation_config={"response_mime_type": "application/json"} 
             )
 
             quiz_data = response.text
             
-            # JSONパース（AIが生成したテキストからJSON部分を抽出）
             match = re.search(r'\{.*\}', quiz_data, re.DOTALL)
             if match:
                 json_string = match.group(0)
@@ -189,7 +187,7 @@ if st.button("問題を生成する"):
                 st.session_state.user_answers = {} 
             else:
                 st.error("AIからのレスポンスがJSON形式ではありませんでした。AIの応答を確認してください。")
-                st.text(quiz_data) # エラー時にAIの生の応答を表示
+                st.text(quiz_data)
                 st.session_state.quiz_data = None
             
     except Exception as e:
@@ -207,7 +205,6 @@ if st.session_state.quiz_data:
     for i, q in enumerate(questions):
         q_type = q.get("type", "unknown") 
         
-        # 問題タイプに応じたタイトル表示
         q_title_map = {
             "multiple_choice": "5択問題",
             "descriptive": "記述式問題",
@@ -221,7 +218,6 @@ if st.session_state.quiz_data:
 
         # --- 問題タイプごとの入力/表示制御 ---
         if q_type == "multiple_choice":
-            # 5択問題の場合
             options = [opt.get("text") for opt in q.get("options", []) if opt.get("text")]
             user_choice = st.radio(
                 "選択してください:",
@@ -231,7 +227,6 @@ if st.session_state.quiz_data:
             )
             st.session_state.user_answers[f"q{i}"] = user_choice
 
-            # 自動採点ロジック
             if user_choice:
                 correct_option = next((opt["text"] for opt in q.get("options", []) if opt.get("is_correct")), None)
                 
@@ -239,18 +234,14 @@ if st.session_state.quiz_data:
                     st.success("✅ 正解です！")
                 elif correct_option:
                     st.error(f"❌ 不正解です。")
-                else:
-                    st.warning("正答がJSONに見つかりませんでした。")
             
         else:
-            # 記述式、穴埋め、意味問題の場合
             user_input = st.text_input(
                 "あなたの解答を入力してください",
                 key=f"q{i}_input"
             )
             st.session_state.user_answers[f"q{i}"] = user_input
             
-            # 自己採点エリア
             if st.session_state.user_answers.get(f"q{i}"):
                 st.info("⚠️ この形式は自己採点です。正答を確認してください。")
             
@@ -262,6 +253,33 @@ if st.session_state.quiz_data:
             
         st.markdown("---")
         
+    # --- 広告エリア ---
+    st.header("💡 おすすめ学習リソース")
+    
+    # 広告コードをトリプルクォートで変数に格納
+    ad_html_code_1 = """
+    <div style="text-align: center; margin: 20px 0;">
+        <a href="https://px.a8.net/svt/ejp?a8mat=45K5P9+9SGMWI+4GDM+601S1" rel="nofollow">
+        <img border="0" width="320" height="50" alt="" src="https://www28.a8.net/svt/bgt?aid=251203293592&wid=001&eno=01&mid=s00000020785001008000&mc=1"></a>
+        <img border="0" width="1" height="1" src="https://www19.a8.net/0.gif?a8mat=45K5P9+9SGMWI+4GDM+601S1" alt="">
+    </div>
+    """
+    
+    ad_html_code_2 = """
+    <div style="text-align: center; margin: 20px 0;">
+        <a href="https://px.a8.net/svt/ejp?a8mat=45K5P9+A4YQLU+2KSK+61C2P" rel="nofollow">
+        <img border="0" width="350" height="240" alt="" src="https://www20.a8.net/svt/bgt?aid=251203293613&wid=001&eno=01&mid=s00000012026001014000&mc=1"></a>
+        <img border="0" width="1" height="1" src="https://www18.a8.net/0.gif?a8mat=45K5P9+A4YQLU+2KSK+61C2P" alt="">
+    </div>
+    """
+    
+    # 2つの広告を表示
+    st.markdown(ad_html_code_1, unsafe_allow_html=True)
+    st.markdown(ad_html_code_2, unsafe_allow_html=True)
+    
+    st.markdown("---")
+
+
     # --- 最終スコア表示（5択問題のみカウント） ---
     if st.button("最終スコアを見る", key="final_score_btn"):
         correct_count = 0
