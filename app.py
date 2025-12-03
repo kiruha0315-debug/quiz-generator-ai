@@ -5,7 +5,7 @@ import re
 import json
 from PIL import Image
 from io import BytesIO
-import streamlit.components.v1 as components # 👈 新規インポート
+import streamlit.components.v1 as components 
 
 # --- 1. 初期設定とAPIキーの取得 ---
 
@@ -16,27 +16,27 @@ st.title("📚 教材理解度テスト自動生成AI")
 # --- 広告エリア：タイトル直下に配置 ---
 
 # 広告コードをトリプルクォートで変数に格納
-# 1つ目の広告 (幅320x高50)
+# 1つ目の広告 (target="_blank" を追加済み)
 ad_html_code_1 = """
 <div style="text-align: center; margin: 5px 0 10px 0;">
-    <a href="https://px.a8.net/svt/ejp?a8mat=45K5P9+9SGMWI+4GDM+601S1" rel="nofollow">
+    <a href="https://px.a8.net/svt/ejp?a8mat=45K5P9+9SGMWI+4GDM+601S1" rel="nofollow" target="_blank">
     <img border="0" width="320" height="50" alt="" src="https://www28.a8.net/svt/bgt?aid=251203293592&wid=001&eno=01&mid=s00000020785001008000&mc=1"></a>
     <img border="0" width="1" height="1" src="https://www19.a8.net/0.gif?a8mat=45K5P9+9SGMWI+4GDM+601S1" alt="">
 </div>
 """
 
-# 2つ目の広告 (幅350x高240)
+# 2つ目の広告 (target="_blank" を追加済み)
 ad_html_code_2 = """
 <div style="text-align: center; margin: 10px 0;">
-    <a href="https://px.a8.net/svt/ejp?a8mat=45K5P9+A4YQLU+2KSK+61C2P" rel="nofollow">
+    <a href="https://px.a8.net/svt/ejp?a8mat=45K5P9+A4YQLU+2KSK+61C2P" rel="nofollow" target="_blank">
     <img border="0" width="350" height="240" alt="" src="https://www20.a8.net/svt/bgt?aid=251203293613&wid=001&eno=01&mid=s00000012026001014000&mc=1"></a>
     <img border="0" width="1" height="1" src="https://www18.a8.net/0.gif?a8mat=45K5P9+A4YQLU+2KSK+61C2P" alt="">
 </div>
 """
 # components.htmlを使って広告を表示
-components.html(ad_html_code_1 + ad_html_code_2, height=320) # 広告の高さに合わせて調整
+components.html(ad_html_code_1 + ad_html_code_2, height=320)
 
-st.markdown("---") # 広告とアプリ本体の区切り
+st.markdown("---") 
 
 st.markdown("貼り付けたテキストやアップロードした写真から、**教科の特性**に合わせた問題セットを自動で生成します。")
 
@@ -44,7 +44,6 @@ st.markdown("貼り付けたテキストやアップロードした写真から�
 API_KEY = os.environ.get("GEMINI_API_KEY")
 
 if not API_KEY:
-    # サイドバーでAPIキー入力を求める（ローカルテスト用）
     st.sidebar.title("設定")
     API_KEY = st.sidebar.text_input("Gemini API Key", type="password")
     if not API_KEY:
