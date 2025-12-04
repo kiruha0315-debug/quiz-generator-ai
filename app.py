@@ -15,7 +15,6 @@ st.title("📚 教材理解度テスト自動生成AI")
 
 # --- 広告エリア：タイトル直下に配置 ---
 
-# 広告コードをトリプルクォートで変数に格納
 # 1つ目の広告 (target="_blank" を追加済み)
 ad_html_code_1 = """
 <div style="text-align: center; margin: 5px 0 10px 0;">
@@ -36,27 +35,39 @@ ad_html_code_2 = """
 # components.htmlを使って広告を表示
 components.html(ad_html_code_1 + ad_html_code_2, height=320)
 
-st.markdown("---") 
+st.markdown("---") # 広告とアプリ本体の区切り
 
 st.markdown("貼り付けたテキストやアップロードした写真から、**教科の特性**に合わせた問題セットを自動で生成します。")
 
-# Streamlit Secretsまたは環境変数からAPIキーを取得
-API_KEY = os.environ.get("GEMINI_API_KEY")
-
-if not API_KEY:
-    st.sidebar.title("設定")
-    API_KEY = st.sidebar.text_input("Gemini API Key", type="password")
-    if not API_KEY:
-        st.error("左のサイドバーにGemini APIキーを入力してください。")
-        st.stop()
-
+# 🔑 APIキーの取得はSecrets/環境変数からのみ行う（ユーザーから見えないようにするため）
 try:
-    genai.configure(api_key=API_KEY)
-    api_key_valid = True
-except Exception:
+    API_KEY = os.environ.get("GEMINI_API_KEY") 
+    
+    if not API_KEY and 'GEMINI_API_KEY' in st.secrets:
+        API_KEY = st.secrets["GEMINI_API_KEY"]
+
+    if API_KEY:
+        genai.configure(api_key=API_KEY)
+        api_key_valid = True
+    else:
+        api_key_valid = False
+        # ユーザーには見えないようにサイドバーで警告
+        st.sidebar.error("⚠️ APIキーが設定されていません。")
+
+except Exception as e:
     api_key_valid = False
-    st.error("APIキーが無効です。正しいキーを入力してください。")
-    st.stop()
+    st.sidebar.error(f"API設定エラー: {e}")
+
+# 🔑 管理者モードのチェック（設定者向けデバッグ情報）
+is_admin = st.query_params.get("admin") == "true"
+
+if is_admin:
+    st.sidebar.header("🔑 管理者設定モード")
+    st.sidebar.write("このパネルは、URLクエリパラメータ`?admin=true`が設定されている場合にのみ表示されます。")
+    if not api_key_valid:
+        st.sidebar.error("Gemini APIキーがSecretsに設定されていません。")
+    else:
+        st.sidebar.success("Gemini API設定OKです。")
 
 # --- 2. ユーザー入力エリア ---
 
@@ -122,7 +133,7 @@ if 'user_answers' not in st.session_state:
 
 if st.button("問題を生成する"):
     if not api_key_valid:
-        st.error("APIキーを正しく設定してください。")
+        st.error("APIキーが設定されていないため、問題を生成できません。")
         st.stop()
 
     if not text_input and not image_part:
