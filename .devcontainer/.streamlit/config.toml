@@ -2,8 +2,8 @@
 
 [browser]
 gatherUsageStats = false
-serverAddress = "0.0.0.0"
 
 [server]
+# クロスオリジン保護とXSRF保護を無効化し、iframe埋め込みを強制的に許可する
 enableCORS = false
 enableXsrfProtection = false
