@@ -7,20 +7,6 @@ from PIL import Image
 from io import BytesIO
 import streamlit.components.v1 as components 
 
-# --- 0. UI強制非表示のためのカスタムCSS（最終手段） ---
-hide_streamlit_ui = """
-<style>
-/* 1. 右上隅のヘッダー要素（三本線メニュー、Streamlitロゴ、GitHub関連ボタンの一部）を非表示 */
-header { display: none !important; }
-
-/* 2. 右下隅のフッター要素（王冠、Manage appボタンを含むフッター全体）を非表示 */
-footer { display: none !important; }
-
-/* 3. 保険: st.statusや右下に浮く可能性のある要素のコンテナを非表示 */
-[data-testid="stStatusWidget"] { display: none !important; }
-
-</style>
-"""
 
 # --- 1. 初期設定とAPIキーの取得 ---
 
@@ -333,4 +319,5 @@ if st.session_state.quiz_data:
             st.info("記述式・穴埋め・意味問題は自動採点に含まれていません。")
         else:
             st.info("5択問題が生成されなかったため、自動採点スコアはありません。")
+
 
