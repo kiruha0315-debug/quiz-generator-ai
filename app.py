@@ -7,6 +7,23 @@ from PIL import Image
 from io import BytesIO
 import streamlit.components.v1 as components 
 
+# --- 0. UI強制非表示のためのカスタムCSS（最終手段） ---
+hide_streamlit_ui = """
+<style>
+/* 右上隅の三本線メニュー、Streamlitロゴ、GitHubボタンの一部を非表示 */
+header { visibility: hidden; }
+
+/* 右下隅の王冠アイコンやManage app、Streamlitロゴなどを含むフッター全体を非表示 */
+footer { visibility: hidden; }
+
+/* 特定の管理ボタンコンテナを非表示にする追加CSS (保険) */
+[data-testid="stStatusWidget"] { visibility: hidden; }
+
+</style>
+"""
+# ページの読み込み時にCSSを適用し、UI要素を非表示にする
+st.markdown(hide_streamlit_ui, unsafe_allow_html=True)
+
 # --- 1. 初期設定とAPIキーの取得 ---
 
 st.set_page_config(page_title="教材理解度テスト自動生成AI", layout="wide")
@@ -39,7 +56,7 @@ st.markdown("---") # 広告とアプリ本体の区切り
 
 st.markdown("貼り付けたテキストやアップロードした写真から、**教科の特性**に合わせた問題セットを自動で生成します。")
 
-# 🔑 APIキーの取得はSecrets/環境変数からのみ行う（ユーザーから見えないようにするため）
+# 🔑 APIキーの取得はSecrets/環境変数からのみ行う
 try:
     API_KEY = os.environ.get("GEMINI_API_KEY") 
     
@@ -51,7 +68,6 @@ try:
         api_key_valid = True
     else:
         api_key_valid = False
-        # ユーザーには見えないようにサイドバーで警告
         st.sidebar.error("⚠️ APIキーが設定されていません。")
 
 except Exception as e:
@@ -71,58 +87,75 @@ if is_admin:
 
 # --- 2. ユーザー入力エリア ---
 
-st.subheader("ステップ1: 教材の入力方式と教科の選択")
+st.subheader("ステップ1: 📚 問題の元となる教材を入力してください")
 
+# ---------------------------------------------
+# 1. 教材の入力方式の選択
+# ---------------------------------------------
+st.markdown("#### 1-A. 教材の入力方式を選ぶ")
 input_method = st.radio(
-    "教材の入力方式を選択してください",
-    ('テキスト貼り付け', 'ファイルアップロード (PDF/TXT)', '写真アップロード (JPG/PNG)')
+    "問題を生成したい教材を、以下のいずれかの方法で入力してください:",
+    ('テキスト貼り付け', 'ファイルアップロード (TXTのみ)', '写真アップロード (JPG/PNG)')
 )
+st.markdown("---") # 区切り線
 
-num_questions = st.number_input("生成する問題数", min_value=1, max_value=20, value=5)
-
-selected_subject = st.selectbox(
-    "科目を選択してください",
-    ('ランダム/一般教養', '歴史・地理', '科学・技術 (理科)', '文学・言語 (国語/英語)', '経済・社会')
-)
-
+# 選択された方式に応じた入力フォームの表示
 text_input = ""
 uploaded_file = None
 image_part = None
 
 if input_method == 'テキスト貼り付け':
     text_input = st.text_area(
-        "ここに教科書や資料の本文を貼り付けてください（100字以上推奨）",
+        "📝 教科書や資料の本文をここに貼り付けてください（100字以上推奨）",
         height=300
     )
     if not text_input:
-        st.info("テキストを貼り付けてください。")
+        st.info("↑ここに文章を貼り付けたら、ステップ1-Bに進んでください。")
 
-elif input_method == 'ファイルアップロード (PDF/TXT)':
-    uploaded_file = st.file_uploader("TXTファイルをアップロードしてください", type=['txt'])
+elif input_method == 'ファイルアップロード (TXTのみ)':
+    uploaded_file = st.file_uploader("📄 TXTファイルをアップロードしてください", type=['txt'])
     if uploaded_file:
         if uploaded_file.type == 'text/plain':
             text_input = uploaded_file.read().decode('utf-8')
-            st.success(f"{uploaded_file.name} を読み込みました。")
+            st.success(f"✅ {uploaded_file.name} のテキストを読み込みました。")
         else:
-            st.warning("現在はTXTファイルのみ対応しています。PDFからの直接テキスト抽出は未実装です。")
+            st.warning("⚠️ 現在はTXTファイルのみに対応しています。")
     if not text_input:
-        st.info("TXTファイルをアップロードしてください。")
+        st.info("↑TXTファイルをアップロードしたら、ステップ1-Bに進んでください。")
 
 elif input_method == '写真アップロード (JPG/PNG)':
-    uploaded_file = st.file_uploader("教科書の写真をアップロードしてください", type=['jpg', 'jpeg', 'png'])
+    uploaded_file = st.file_uploader("📷 教科書やプリントの写真をアップロードしてください", type=['jpg', 'jpeg', 'png'])
     if uploaded_file:
         try:
             image = Image.open(uploaded_file)
             st.image(image, caption='アップロードされた教材画像', width=300)
             image_part = image
-            st.info("画像をAIに渡し、内容を読み取らせます。")
+            st.success("✅ 画像を読み込みました。AIが画像の内容を分析します。")
         except Exception as e:
             st.error(f"画像の読み込みに失敗しました: {e}")
+    if not uploaded_file:
+        st.info("↑画像をアップロードしたら、ステップ1-Bに進んでください。")
 
 if not text_input and not image_part:
     st.session_state.quiz_data = None
     st.session_state.user_answers = {}
+    
+st.markdown("---") 
 
+# ---------------------------------------------
+# 2. 教科と問題数の選択
+# ---------------------------------------------
+st.markdown("#### 1-B. 問題のバランスと数を決める")
+
+# 教科の選択
+st.markdown("💡 **重要**: 教科を選ぶと、**問題形式のバランス（例：歴史は穴埋め多め、科学は5択多め）**が自動で調整されます。")
+selected_subject = st.selectbox(
+    "科目を選択してください",
+    ('ランダム/一般教養', '歴史・地理', '科学・技術 (理科)', '文学・言語 (国語/英語)', '経済・社会')
+)
+
+# 問題数
+num_questions = st.number_input("🔢 生成する問題数", min_value=1, max_value=20, value=5)
 
 # --- 3. 問題生成ロジック ---
 
