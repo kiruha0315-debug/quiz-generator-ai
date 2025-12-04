@@ -1,0 +1,19 @@
+[theme]
+# StreamlitのUIテーマ設定。ここでは特に変更なし
+
+[global]
+# Streamlitのグローバル設定
+
+[server]
+# Streamlitサーバーの設定
+
+[browser]
+# Streamlitブラウザに関する設定
+
+[ui]
+# UIに関する設定
+# 右上隅の三本線メニューを非表示にする
+hideToolbar = true
+
+# 右上隅のStreamlitロゴと、そのリンクを非表示にする
+hideStreamlitBranding = true
