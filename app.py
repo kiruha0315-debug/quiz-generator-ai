@@ -61,17 +61,6 @@ except Exception as e:
     api_key_valid = False
     st.sidebar.error(f"API設定エラー: {e}")
 
-# 🔑 管理者モードのチェック（設定者向けデバッグ情報のみ）
-is_admin = st.query_params.get("admin") == "true"
-
-if is_admin:
-    # st.sidebarはiframeで埋め込む際に空白になるため、デバッグ情報のみ表示
-    st.sidebar.header("🔑 管理者設定モード")
-    st.sidebar.write("このパネルは、URLクエリパラメータ`?admin=true`が設定されている場合にのみ表示されます。")
-    if not api_key_valid:
-        st.sidebar.error("Gemini APIキーがSecretsに設定されていません。")
-    else:
-        st.sidebar.success("Gemini API設定OKです。")
 
 # --- 2. ユーザー入力エリア ---
 
@@ -325,3 +314,4 @@ if st.session_state.quiz_data:
             st.info("記述式・穴埋め・意味問題は自動採点に含まれていません。")
         else:
             st.info("5択問題が生成されなかったため、自動採点スコアはありません。")
+
