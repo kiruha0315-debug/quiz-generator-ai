@@ -1,19 +1,9 @@
-[theme]
-# StreamlitのUIテーマ設定。ここでは特に変更なし
-
-[global]
-# Streamlitのグローバル設定
-
-[server]
-# Streamlitサーバーの設定
+# .streamlit/config.toml
 
 [browser]
-# Streamlitブラウザに関する設定
+gatherUsageStats = false
+serverAddress = "0.0.0.0"
 
-[ui]
-# UIに関する設定
-# 右上隅の三本線メニューを非表示にする
-hideToolbar = true
-
-# 右上隅のStreamlitロゴと、そのリンクを非表示にする
-hideStreamlitBranding = true
+[server]
+enableCORS = false
+enableXsrfProtection = false
